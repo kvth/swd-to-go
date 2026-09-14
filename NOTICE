@@ -1,0 +1,95 @@
+swd-to-go
+Copyright 2026 Kevin Thomas
+
+This product includes software developed at
+Cesanta Software Limited (https://cesanta.com/).
+
+--------------------------------------------------------------------------------
+Portions derived from Mongoose OS mos
+--------------------------------------------------------------------------------
+
+The following files are derived from the Mongoose OS `mos` tool:
+
+    https://github.com/mongoose-os/mos
+    Copyright (c) 2014-2019 Cesanta Software Limited
+    All rights reserved
+    Licensed under the Apache License, Version 2.0
+
+All of them have been modified.
+
+  target/dp/dp.go
+      from cli/flash/common/cmsis-dap/dp/cmsis_dap_dp.go. Retains much of the
+      original structure -- SetDbgPower, DbgReset, selectAP, the AP register
+      accessors and the block chunking loops -- with error handling, logging
+      and the probe abstraction changed. The SELECT shadow and Invalidate are
+      new.
+
+  target/mem/memap.go
+      from cli/flash/common/cmsis-dap/memap/cmsis_dap_memap.go. Largely
+      rewritten: the CSW/TAR shadow, byte-sized access, the word-only fallback
+      and the tracing are new. Retains the register definitions, the
+      initialisation check, the auto-increment handling and the exported API
+      shape.
+
+  probe.go
+      from cli/flash/common/cmsis-dap/dap/cmsis_dap_client_interface.go. The
+      Status predicate methods and the Request/Op types come from the
+      original's TransferStatus and TransferRequest/TransferOp, and the Probe
+      interface follows its DAPClient method set. The Pin, Sequence and Config
+      types, the block and sequence calls and all documentation are new.
+
+  cmsis/client/client.go
+      structurally follows cli/flash/common/cmsis-dap/dap/cmsis_dap_client.go
+      in its command helpers (newCmd/exec/execStatus, info/infoString) and its
+      DAP_Info accessor set. The packet encoding itself is the CMSIS-DAP
+      specification's; the bodies, the Transport seam and everything from
+      SWDSequence down are new.
+
+  target/rp2040/flasher.go
+      no code from the original, but ReadTargetReg, ReadTargetMem,
+      WriteTargetReg and WriteTargetMem are named after the interfaces in
+      cli/flash/common/target.go, reaching this module through target/mem.
+
+The rest of this module was written for it and has no counterpart upstream:
+the bit-banging drivers, probe/bitbang, cmsis/server and its transports,
+cmsis/wire (whose constants are the CMSIS-DAP specification's), target/rtt,
+target/rp2040 beyond the names noted above, and internal/simtarget. The
+ARMv6-M debug register addresses and bit definitions in target/rp2040 are
+from ARM's architecture reference manual, not from the original.
+
+--------------------------------------------------------------------------------
+Third-party dependencies
+--------------------------------------------------------------------------------
+
+github.com/cesanta/hid
+    The MIT License (MIT)
+    Copyright (c) 2014 Florian Sundermann
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+
+github.com/spf13/cobra
+    Apache License, Version 2.0
+    Copyright 2013-2023 The Cobra Authors
+
+github.com/spf13/pflag
+    BSD 3-Clause License
+    Copyright (c) 2012 Alex Ogier and The Go Authors
+
+github.com/inconshreveable/mousetrap
+    Apache License, Version 2.0

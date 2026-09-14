@@ -1,0 +1,9 @@
+# build outputs (see Makefile)
+/swd-gateway
+/rtt-local
+/rtt-tcp
+/probe-info
+/flash-rp2040
+/client
+/dist/
+cover.out
