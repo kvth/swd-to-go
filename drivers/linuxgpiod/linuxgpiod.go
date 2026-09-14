@@ -11,10 +11,10 @@
 // Pi 5 (RP1 across PCIe), on a Pi 1-4 (BCM283x/BCM2711), and on hardware that
 // is not a Raspberry Pi at all.
 //
-// [github.com/kvth/swd-to-go/drivers/bcm2835] is the other half of that trade. It writes BCM2835 GPIO
-// registers through an mmap of /dev/gpiomem, which is a store instruction per
-// edge and cannot work anywhere else; this one is a syscall per edge and works
-// everywhere. Expect, on a Pi:
+// [github.com/kvth/swd-to-go/drivers/bcm2835] is the other half of that trade.
+// It writes BCM2835 GPIO registers through an mmap of /dev/gpiomem, which is
+// a store instruction per edge and cannot work anywhere else; this one is a
+// syscall per edge and works everywhere. Expect, on a Pi:
 //
 //	drivers/bcm2835     ~30-60 ns per edge      megahertz of SWCLK
 //	drivers/linuxgpiod  ~1-3 us per edge        hundreds of kilohertz
@@ -80,9 +80,10 @@
 //
 // # Why one type here, and three in bcm2835
 //
-// [github.com/kvth/swd-to-go/drivers/bcm2835] has a separate type per SWDIO wiring and three copies
-// of SwdTransfer, because a branch or an indirect call on a path where an edge
-// costs 30 ns is a real fraction of the clock. That argument does not survive
+// [github.com/kvth/swd-to-go/drivers/bcm2835] has a separate type per SWDIO wiring
+// and three copies of SwdTransfer, because a branch or an indirect call on a
+// path where an edge costs 30 ns is a real fraction of the clock. That
+// argument does not survive
 // the move to a syscall per edge: the same branch is now a tenth of a percent,
 // and BenchmarkDispatch and BenchmarkIoctlFloor in this package exist to put
 // numbers on it rather than leave it as an assertion.
@@ -118,9 +119,10 @@
 //
 // # Pull-ups
 //
-// Not set, matching [github.com/kvth/swd-to-go/drivers/bcm2835] and on the same reasoning: the board
-// is assumed to supply SWDIO's pull-up, this repo's gateway has always run that
-// way, and a bias this driver picks for itself is a bias nobody asked for. The
+// Not set, matching [github.com/kvth/swd-to-go/drivers/bcm2835] and on the same
+// reasoning: the board is assumed to supply SWDIO's pull-up, the C++ gateway
+// has always run that way, and a bias this driver picks for itself is a bias
+// nobody asked for. The
 // uAPI has the flags if that ever needs revisiting -- it is a one-line change
 // in requestLines, unlike on the BCM registers, where it would be a guess about
 // which pull-control layout the board has.
@@ -344,7 +346,7 @@ func OpenBidirBufferedPins(swclk, swdio, swdioDir Pin) (*Driver, error) {
 
 // OpenSplit claims the pins for separate SWDIO input and output pins behind a
 // buffer turned round by a direction line -- the wiring most boards with a
-// level shifter use, and the one this repo's gateway ships with.
+// level shifter use, and the one the C++ gateway ships with.
 //
 // It is also the fastest of the three here, by more than it is on the BCM
 // registers: the data pins keep their directions for the life of the session,
@@ -740,8 +742,9 @@ func (d *Driver) PortOff() {
 //
 // The order is the one drivers/bcm2835 uses, and it is not arbitrary:
 // whichever side is about to stop driving is pointed away from first, so the
-// host pin and the buffer output are never both driving the wire. Direction low is the host driving, matching this repo's C gateway and
-// its bcm2835 driver; OpenOCD's swdio_dir has the opposite polarity.
+// host pin and the buffer output are never both driving the wire. Direction
+// low is the host driving, matching drivers/bcm2835 and the C++ gateway it
+// follows; OpenOCD's swdio_dir has the opposite polarity.
 func (d *Driver) SwdioOutEnable() {
 	if d.dir.io != nil {
 		d.write(d.dir.io, 0, d.dir.mask)

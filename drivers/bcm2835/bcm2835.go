@@ -14,16 +14,17 @@
 // message saying so rather than writing to the wrong addresses. Use
 // [github.com/kvth/swd-to-go/drivers/linuxgpiod] on those boards.
 //
-// Register offsets and the memory-barrier discipline are taken from this repo's
-// own C++ gateway (gpio_regs.h): GPFSEL0/GPSET0/GPCLR0/GPLEV0 at the same byte
-// offsets, one atomic load or store per access in place of gpio_regs.h's
+// Register offsets and the memory-barrier discipline are taken from the C++
+// gateway at github.com/kvth/cmsis-dap-tcp-gateway-rpi (gpio_regs.h):
+// GPFSEL0/GPSET0/GPCLR0/GPLEV0 at the same byte offsets, one atomic load or
+// store per access in place of that header's
 // volatile-pointer-plus-__sync_synchronize(), for the same reason -- without a
 // barrier the CPU can merge or reorder back-to-back writes to GPSET0/GPCLR0 and
 // drop a clock edge.
 //
-// Pull-up/down control is deliberately not implemented, matching gpio_regs.h:
-// this repo's own gateway runs correctly without it, on the assumption the board
-// supplies SWDIO's pull-up externally, so there is nothing here to get wrong by
+// Pull-up/down control is deliberately not implemented, matching that gateway:
+// it runs correctly without it, on the assumption the board supplies SWDIO's
+// pull-up externally, so there is nothing here to get wrong by
 // guessing at a Pi model's pull-control register layout -- BCM2711 moved it, and
 // the BCM2835 sequence is a silent no-op there.
 //
@@ -71,7 +72,7 @@ import (
 )
 
 // BCM2711 / Raspberry Pi GPIO register offsets, in bytes from the GPIO base --
-// see gpio_regs.h.
+// see the C++ gateway's gpio_regs.h.
 const (
 	blockSize = 4096
 
@@ -204,7 +205,7 @@ func (g *gpioRegs) pin(n uint) pin {
 // read-modify-write fields: a one acts on that pin and a zero leaves it alone,
 // so there is nothing to preserve and nothing to read back first.
 //
-// The store is atomic for the reason gpio_regs.h puts a __sync_synchronize()
+// The store is atomic for the reason the C++ gateway puts a __sync_synchronize()
 // after every register write: without a barrier the CPU's write buffer can
 // merge two stores to the same address into one and lose a clock edge. The
 // speed coefficients [swd.Calibrator] measures assume those barriers are in
@@ -269,8 +270,8 @@ type core struct {
 	dataPhase  bool
 
 	// The delay loop is paced by a pre-measured iteration count rather than by
-	// polling a clock, following this repo's own C++ gateway (DAP.h's
-	// SPEED_COEFF/SPEED_OFFSET, PIN_DELAY_SLOW() in DAP.cpp). The measured
+	// polling a clock, following the C++ gateway (DAP.h's SPEED_COEFF and
+	// SPEED_OFFSET, PIN_DELAY_SLOW() in DAP.cpp). The measured
 	// constants there are specific to that C++ loop's compiled code, so they
 	// cannot be copied in; measure() works out the equivalent numbers for
 	// whatever this Go binary's loop actually costs on this CPU.

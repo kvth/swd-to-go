@@ -1,9 +1,10 @@
 // RP2040 bootrom flashing driven by the host, over ordinary CMSIS-DAP
 // transfers, on top of this module's DAP/DP/MEM-AP client.
 //
-// The sequence is the same one the probe-side vendor commands run (see
-// ../../rp2040.h), and the one the bootrom's ABI dictates: find the bootrom
-// function table, then for each routine set r0..r3 and r7 and run the
+// The sequence is the same one the probe-side vendor commands run (rp2040.h
+// in github.com/kvth/cmsis-dap-tcp-gateway-rpi), and the one the bootrom's ABI
+// dictates: find the bootrom function table, then for each routine set
+// r0..r3 and r7 and run the
 // bootrom's debug_trampoline, which is `blx r7` followed by a breakpoint.
 // The difference is where it runs, and that is the whole point of having both.
 //

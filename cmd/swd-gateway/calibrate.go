@@ -16,7 +16,8 @@ import (
 //	  request:   (no arguments)
 //	  response:  u8 status, u32 speed_coeff, u32 speed_offset
 //
-// The ID and the layout match the C gateway at cmsis-dap-tcp-gateway-rpi, so a
+// The ID and the layout match the C gateway at
+// github.com/kvth/cmsis-dap-tcp-gateway-rpi, so a
 // client that knows that probe can talk to this one.
 const cmdCalibrate = 0x91
 

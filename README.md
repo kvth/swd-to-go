@@ -470,7 +470,8 @@ It implements `swd.BitBanger`, so everything above the pins is production code.
 
 `swd-gateway` bit-bangs SWD over GPIO and serves it as a CMSIS-DAP probe over
 TCP or a Unix socket, so OpenOCD can point straight at it. It is a Go
-replacement for the C gateway at `cmsis-dap-tcp-gateway-rpi`, with the same
+replacement for the C gateway at
+[`cmsis-dap-tcp-gateway-rpi`](https://github.com/kvth/cmsis-dap-tcp-gateway-rpi), with the same
 flags for the parts it keeps.
 
 ```bash
