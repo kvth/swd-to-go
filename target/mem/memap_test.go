@@ -245,3 +245,50 @@ func TestBlockReadsDoNotRewriteCSW(t *testing.T) {
 		t.Errorf("eight four-word reads cost %d transfers, want %d", n, 8*7)
 	}
 }
+
+// An unaligned range used to be moved a byte at a time -- a TAR write and a
+// DRW access each -- so its ends cost several transfers per byte where the
+// words containing them cost a handful in total. RTT rings sit at arbitrary
+// offsets, so this is the common case and not the corner one.
+//
+// The numbers are deliberately compared against the aligned read of the same
+// length rather than written down: what matters is that a ragged end costs
+// about the same as a tidy one, not what either costs this month.
+func TestUnalignedAccessCostsAboutWhatAnAlignedOneDoes(t *testing.T) {
+	forEachAP(t, func(t *testing.T, opts simtarget.Options) {
+		apc, target := attach(t, opts)
+		ctx := context.Background()
+
+		const at = ramBase + 0x300
+		cost := func(f func() error) int {
+			before := target.Transfers
+			if err := f(); err != nil {
+				t.Fatalf("access: %v", err)
+			}
+			return target.Transfers - before
+		}
+
+		data := make([]byte, 64)
+		aligned := cost(func() error {
+			_, err := apc.ReadTargetMemBytes(ctx, at, len(data))
+			return err
+		})
+		ragged := cost(func() error {
+			_, err := apc.ReadTargetMemBytes(ctx, at+2, len(data)-3)
+			return err
+		})
+		if ragged > aligned+4 {
+			t.Errorf("a ragged read costs %d transfers against an aligned one's %d; "+
+				"the ends are being moved a byte at a time again", ragged, aligned)
+		}
+
+		alignedW := cost(func() error { return apc.WriteTargetMemBytes(ctx, at, data) })
+		raggedW := cost(func() error { return apc.WriteTargetMemBytes(ctx, at+2, data[:len(data)-3]) })
+		// A ragged write also reads the two boundary words back before it can
+		// put them, which an aligned write does not.
+		if raggedW > alignedW*2+4 {
+			t.Errorf("a ragged write costs %d transfers against an aligned one's %d; "+
+				"the ends are being moved a byte at a time again", raggedW, alignedW)
+		}
+	})
+}

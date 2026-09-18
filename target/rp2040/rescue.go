@@ -59,16 +59,9 @@ func Rescue(ctx context.Context, probe swd.Probe) error {
 	if err := probe.Connect(ctx); err != nil {
 		return fmt.Errorf("connect: %w", err)
 	}
-	if err := swd.JTAGToDormant(ctx, probe); err != nil {
-		return fmt.Errorf("JTAG to dormant: %w", err)
-	}
-	if err := swd.DormantToSWD(ctx, probe); err != nil {
-		return fmt.Errorf("dormant to SWD: %w", err)
-	}
-	if err := swd.LineReset(ctx, probe); err != nil {
-		return fmt.Errorf("line reset: %w", err)
-	}
-	if err := swd.SelectTarget(ctx, probe, TARGET_RESCUE); err != nil {
+	// One call, as in Attach: the switching patterns and the TARGETSEL that
+	// picks the rescue port.
+	if err := swd.SwitchAndSelect(ctx, probe, TARGET_RESCUE); err != nil {
 		return fmt.Errorf("select the rescue port: %w", err)
 	}
 

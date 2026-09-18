@@ -27,9 +27,6 @@
 //     After a switch they describe a chip that is not listening, and the next
 //     access skips a TAR write it needed and lands at the wrong address --
 //     quietly, with a plausible value.
-//   - Whether the AP does byte-sized accesses is a property of that AP, found
-//     out by writing CSW and reading it back. A shared client re-probes on
-//     every switch; a per-target one finds out once, ever.
 //   - A shared client has to be re-initialised on every switch, which throws
 //     away the saved writes the shadow exists for. Per-target clients keep
 //     theirs, and a target revisited a moment later is still described by the
@@ -45,7 +42,7 @@ package mem
 // This file is derived from the Mongoose OS mos tool
 // (github.com/mongoose-os/mos,
 // cli/flash/common/cmsis-dap/memap/cmsis_dap_memap.go) and has been modified:
-// the CSW/TAR shadow, byte-sized access and its word-only fallback, and the
+// the CSW/TAR shadow, the word-access handling of unaligned ranges, and the
 // log/slog tracing are new; the register definitions, the initialisation
 // check, the auto-increment handling and the exported API shape come from the
 // original. See the NOTICE file.
@@ -69,7 +66,6 @@ package mem
 import (
 	"context"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"log/slog"
 
@@ -112,10 +108,6 @@ const (
 	tarAutoIncRegion uint32 = 1024
 )
 
-// errNoByteAccess is internal: it says the AP cannot do byte-sized accesses, so
-// a partial word has to be read-modify-written instead.
-var errNoByteAccess = errors.New("mem: the MEM-AP does not support byte accesses")
-
 // DebugPort is the part of a debug port a MEM-AP client needs: access-port
 // registers, and the sticky-error clear that has to happen before any of them
 // will answer again after a fault. target/dp's Client is one.
@@ -146,12 +138,6 @@ type Client struct {
 	cswKnown bool
 	tar      uint32
 	tarKnown bool
-
-	// Whether the AP can do byte-sized accesses. The size field is read-only
-	// for widths an AP does not implement, so the only way to find out is to
-	// write it and read it back.
-	byteProbed bool
-	byteOK     bool
 }
 
 // New builds a MEM-AP client on a debug port. apSel picks the access port.
@@ -164,8 +150,7 @@ func New(dpc DebugPort, apSel uint8) *Client {
 // package comment. It touches no wire.
 // SetLogger points this client's tracing at a logger of the caller's choosing.
 // Unset, it uses [slog.Default]. Every target access is one record at
-// [swd.LevelTrace]; the one thing logged above that is an AP that turns out
-// not to do byte accesses, which is a capability discovered once.
+// [swd.LevelTrace], and nothing is logged above it.
 func (mapc *Client) SetLogger(l *slog.Logger) { mapc.log = l }
 
 func (mapc *Client) logger() *slog.Logger {
@@ -206,11 +191,9 @@ func hex32(v uint32) string { return fmt.Sprintf("0x%08x", v) }
 // Getting this wrong is quiet rather than loud: the access lands at whatever
 // address TAR actually holds and comes back with a plausible value.
 //
-// This drops the register shadow and nothing else. Whether the AP does
-// byte-sized accesses is a property of that AP, found out once by probing, and
-// survives any reset of the target -- but not a swap for a different device.
-// [Client.Init] is the one that forgets that too, and re-reads CSW to check the
-// AP is enabled, which is why a bring-up calls Init rather than this.
+// This drops the register shadow and nothing else. [Client.Init] also re-reads
+// CSW to check the AP is enabled, which is why a bring-up calls Init rather
+// than this.
 func (mapc *Client) Invalidate() {
 	mapc.cswKnown = false
 	mapc.tarKnown = false
@@ -286,41 +269,8 @@ func (mapc *Client) tarAdvanced(addr, n uint32) {
 	mapc.tarKnown = true
 }
 
-// ensureByteAccess reports whether the AP implements byte-sized accesses,
-// probing once and remembering the answer.
-func (mapc *Client) ensureByteAccess(ctx context.Context) error {
-	if mapc.byteProbed {
-		if mapc.byteOK {
-			return nil
-		}
-		return errNoByteAccess
-	}
-	mapc.byteProbed = true
-
-	if err := mapc.setCSW(ctx, cswSizeByte, cswAddrIncOff); err != nil {
-		return err
-	}
-	readBack, err := mapc.dpc.ReadAPReg(ctx, mapc.apSel, uint8(CSW))
-	if err != nil {
-		mapc.byteProbed = false
-		mapc.cswKnown = false
-		return err
-	}
-	// Whatever came back is what the AP actually holds, size field included.
-	mapc.csw, mapc.cswKnown = readBack, true
-
-	mapc.byteOK = readBack&cswSizeMask == cswSizeByte
-	if !mapc.byteOK {
-		mapc.logger().DebugContext(ctx, "MEM-AP does not support byte accesses",
-			"ap", mapc.apSel, "csw", hex32(readBack))
-		return errNoByteAccess
-	}
-	return nil
-}
-
 func (mapc *Client) Init(ctx context.Context) error {
 	mapc.Invalidate()
-	mapc.byteProbed, mapc.byteOK = false, false
 
 	csw, err := mapc.ReadReg(ctx, CSW)
 	if err != nil {
@@ -451,43 +401,7 @@ func (mapc *Client) runToBoundary(addr uint32, remaining int) int {
 	return n
 }
 
-// --- byte access ------------------------------------------------------------
-
-// rwBytes moves a handful of bytes one byte-sized access at a time. It is for
-// the unaligned ends of a range, where a word access would touch memory the
-// caller did not name — which for an MMIO register or a location the target is
-// itself writing is not the same thing at all.
-func (mapc *Client) rwBytes(ctx context.Context, addr uint32, buf []byte, isWrite bool) error {
-	if err := mapc.ensureByteAccess(ctx); err != nil {
-		return err
-	}
-	if err := mapc.setCSW(ctx, cswSizeByte, cswAddrIncOff); err != nil {
-		return err
-	}
-
-	for i := range buf {
-		at := addr + uint32(i)
-		lane := 8 * (at & 3) // which byte lane of DRW it sits in
-
-		if err := mapc.setTAR(ctx, at); err != nil {
-			return err
-		}
-		if isWrite {
-			if err := mapc.dpc.WriteAPReg(ctx, mapc.apSel, uint8(DRW), uint32(buf[i])<<lane); err != nil {
-				mapc.tarKnown = false
-				return err
-			}
-			continue
-		}
-		v, err := mapc.dpc.ReadAPReg(ctx, mapc.apSel, uint8(DRW))
-		if err != nil {
-			mapc.tarKnown = false
-			return err
-		}
-		buf[i] = byte(v >> lane)
-	}
-	return nil
-}
+// --- word access ------------------------------------------------------------
 
 // readWordsInto reads whole words straight into buf, which must be a multiple
 // of four bytes long. It saves the caller's slice being built twice.
@@ -510,8 +424,12 @@ func (mapc *Client) writeWordsFrom(ctx context.Context, addr uint32, buf []byte)
 	return mapc.WriteTargetMem(ctx, addr, words)
 }
 
-// ReadTargetMemBytes reads any address and length: byte accesses at the
-// unaligned ends, block word transfers through the middle.
+// ReadTargetMemBytes reads any address and length.
+//
+// Whole words are block transfers; an unaligned end is served by reading the
+// word that contains it, which is one transfer where a byte-sized access is
+// one TAR write and one DRW read *per byte*. See the package comment for what
+// that means for a caller reading registers rather than memory.
 func (mapc *Client) ReadTargetMemBytes(ctx context.Context, addr uint32, length int) ([]byte, error) {
 	if length < 0 {
 		return nil, fmt.Errorf("negative length %d", length)
@@ -519,92 +437,43 @@ func (mapc *Client) ReadTargetMemBytes(ctx context.Context, addr uint32, length 
 	if length == 0 {
 		return nil, nil
 	}
+	if addr%4 != 0 || length%4 != 0 {
+		return mapc.readBytesViaWords(ctx, addr, length)
+	}
+
 	out := make([]byte, length)
-
-	at, buf := addr, out
-	head := int((4 - addr%4) % 4)
-	if head > len(buf) {
-		head = len(buf)
-	}
-	if head != 0 {
-		err := mapc.rwBytes(ctx, at, buf[:head], false)
-		if errors.Is(err, errNoByteAccess) {
-			return mapc.readBytesViaWords(ctx, addr, length)
-		}
-		if err != nil {
-			return nil, err
-		}
-		at, buf = at+uint32(head), buf[head:]
-	}
-
-	if words := len(buf) &^ 3; words != 0 {
-		if err := mapc.readWordsInto(ctx, at, buf[:words]); err != nil {
-			return nil, err
-		}
-		at, buf = at+uint32(words), buf[words:]
-	}
-
-	if len(buf) != 0 {
-		err := mapc.rwBytes(ctx, at, buf, false)
-		if errors.Is(err, errNoByteAccess) {
-			return mapc.readBytesViaWords(ctx, addr, length)
-		}
-		if err != nil {
-			return nil, err
-		}
+	if err := mapc.readWordsInto(ctx, addr, out); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
 
-// WriteTargetMemBytes writes any address and length, the same way.
+// WriteTargetMemBytes writes any address and length, the same way: whole words
+// go straight out, and a ragged end is read-modify-written a word at a time.
 func (mapc *Client) WriteTargetMemBytes(ctx context.Context, addr uint32, data []byte) error {
 	if len(data) == 0 {
 		return nil
 	}
-
-	at, buf := addr, data
-	head := int((4 - addr%4) % 4)
-	if head > len(buf) {
-		head = len(buf)
+	if addr%4 != 0 || len(data)%4 != 0 {
+		return mapc.writeBytesViaWords(ctx, addr, data)
 	}
-	if head != 0 {
-		err := mapc.rwBytes(ctx, at, buf[:head], true)
-		if errors.Is(err, errNoByteAccess) {
-			return mapc.writeBytesViaWords(ctx, addr, data)
-		}
-		if err != nil {
-			return err
-		}
-		at, buf = at+uint32(head), buf[head:]
-	}
-
-	if words := len(buf) &^ 3; words != 0 {
-		if err := mapc.writeWordsFrom(ctx, at, buf[:words]); err != nil {
-			return err
-		}
-		at, buf = at+uint32(words), buf[words:]
-	}
-
-	if len(buf) != 0 {
-		err := mapc.rwBytes(ctx, at, buf, true)
-		if errors.Is(err, errNoByteAccess) {
-			return mapc.writeBytesViaWords(ctx, addr, data)
-		}
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return mapc.writeWordsFrom(ctx, addr, data)
 }
 
-// --- the word-only fallback -------------------------------------------------
+// --- partial words ----------------------------------------------------------
 //
-// An AP that implements only word accesses cannot be asked for an unaligned
-// range at all, so the range is widened to whole words and the ends are
-// read-modify-written. That is a real difference in behaviour, not just in
-// speed: the bytes either side of the range are read and written back, and
-// anything the target changed in between is lost. It is the best such an AP
-// can do, and the reason the byte path above is preferred.
+// An unaligned range is widened to the whole words containing it. That is a
+// real difference in behaviour and not just in speed: a read takes in up to
+// three bytes either side, and a write reads those bytes and puts them back,
+// so anything the target changed in between is lost.
+//
+// For memory -- which is what these two calls are for, and what RTT and
+// flashing use them for -- that is invisible and several times cheaper: one
+// transfer against one TAR write and one DRW access per byte. For a register
+// with read side effects, or one whose neighbours in the same word are
+// separate registers, it is wrong, and such a register wants
+// [Client.ReadTargetReg] and [Client.WriteTargetReg] instead. It is also what
+// an AP that implements no byte accesses at all forces anyway.
 
 func (mapc *Client) readBytesViaWords(ctx context.Context, addr uint32, length int) ([]byte, error) {
 	start := addr &^ 3

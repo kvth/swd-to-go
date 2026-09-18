@@ -166,9 +166,10 @@ mux and it describes a chip that is no longer listening: the next access skips a
 `TAR` write it needed and lands at the wrong address, quietly, with a plausible
 value. Sharing can be made safe with `Invalidate` or a re-`Init` after every
 switch, but that throws away exactly the saved writes the shadow exists for, and
-re-runs the MEM-AP's byte-access probe every time. Per-position clients keep
-their shadows and discover that capability once. They are an allocation each and
-no I/O, so a dozen positions cost nothing.
+re-runs the MEM-AP's enable check every time. Per-position clients keep their
+shadows, so a target revisited a moment later is still described by the one it
+left behind. They are an allocation each and no I/O, so holding one per
+position costs nothing.
 
 
 ## Packages
@@ -435,7 +436,7 @@ for that case rather than a stub that lies:
 | package | what it is |
 |---|---|
 | `target/dp` | debug port: power-up, `SELECT`, AP register access |
-| `target/mem` | MEM-AP: target memory, word and byte granularity. Shadows `CSW` and `TAR` so a register write that would change nothing never goes out — polling one address costs one round trip rather than two, and a block run reloads `TAR` only where the AP's auto-increment wraps |
+| `target/mem` | MEM-AP: target memory, word and byte granularity — an unaligned range is served by the words containing it, one transfer rather than one TAR write and one DRW access per byte. Shadows `CSW` and `TAR` so a register write that would change nothing never goes out — polling one address costs one round trip rather than two, and a block run reloads `TAR` only where the AP's auto-increment wraps |
 | `target/rtt` | SEGGER RTT against a target's control block. The block is read once at attach and its fixed parts kept, so a poll is one descriptor read; the scan that finds it overlaps its chunks, steps over unmapped memory, and checks a candidate's header before believing the ID string |
 | `target/rp2040` | RP2040 bring-up (`Attach` does the dormant/SWD dance, the multidrop `TARGETSEL` and the DPIDR read that completes it, and returns a detach func — it sets no clock and initialises nothing above the wire), `Rescue` for a board whose firmware has locked the debug port out, and bootrom flashing — `Flasher` batches a ROM call's register setup into one transfer list and moves bulk data with block transfers, and `Flasher.FlashImage` is the whole write with the preverify, verify and reset steps OpenOCD's `program` has |
 
@@ -597,7 +598,7 @@ Two levels, and both are quiet by default:
 | level | what |
 |---|---|
 | `swd.LevelTrace` (`slog.LevelDebug - 4`) | every DP and MEM-AP register access, and every CMSIS-DAP packet in and out |
-| `slog.LevelDebug` | the handful of one-off facts — which HID device was opened, an AP that turns out not to do byte accesses |
+| `slog.LevelDebug` | the handful of one-off facts — which HID device was opened |
 
 Nothing logs at Info or above. A library that wrote to your log because it
 opened a device successfully would be deciding something that is yours to

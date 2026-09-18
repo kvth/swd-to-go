@@ -54,17 +54,11 @@ func Attach(ctx context.Context, probe swd.Probe, core uint32) (detach func(cont
 	if err := probe.Connect(ctx); err != nil {
 		return detach, fmt.Errorf("connect: %w", err)
 	}
-	if err := swd.JTAGToDormant(ctx, probe); err != nil {
-		return detach, fmt.Errorf("JTAG to dormant: %w", err)
-	}
-	if err := swd.DormantToSWD(ctx, probe); err != nil {
-		return detach, fmt.Errorf("dormant to SWD: %w", err)
-	}
-	if err := swd.LineReset(ctx, probe); err != nil {
-		return detach, fmt.Errorf("line reset: %w", err)
-	}
-	if err := swd.SelectTarget(ctx, probe, core); err != nil {
-		return detach, fmt.Errorf("select target 0x%08x: %w", core, err)
+	// One call: the switching patterns and the TARGETSEL that picks this core.
+	// Four separate ones would be four exchanges with a probe across a socket,
+	// and a multiplexed bus pays that on every poll of every position.
+	if err := swd.SwitchAndSelect(ctx, probe, core); err != nil {
+		return detach, fmt.Errorf("switch to SWD and select target 0x%08x: %w", core, err)
 	}
 	if err := checkIDR(ctx, probe); err != nil {
 		return detach, fmt.Errorf("target 0x%08x: %w", core, err)
