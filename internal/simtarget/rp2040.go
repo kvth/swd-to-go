@@ -30,7 +30,12 @@ const (
 // Bootrom entry points. The addresses are arbitrary; what matters is that the
 // function table names them and that a call lands on one.
 const (
-	romTableAddr uint32 = 0x0100
+	// Deliberately not word-aligned, as a real RP2040's is (0x7a): reading the
+	// table then has unaligned ends, which is what makes the MEM-AP client
+	// leave a byte-sized CSW behind. Aligning this hides anything above that
+	// assumes the size it wants is still in CSW -- which is how a flashing
+	// session that worked here failed on the chip.
+	romTableAddr uint32 = 0x00fa
 
 	romTrampoline    uint32 = 0x0200
 	romTrampolineEnd uint32 = 0x0210

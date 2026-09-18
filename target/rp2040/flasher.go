@@ -55,6 +55,7 @@ const (
 	// bootromMagicAddr, shared with rp2040.go.
 
 	// MEM-AP registers, as the DP client numbers them.
+	regCSW uint8 = 0x00
 	regTAR uint8 = 0x04
 	regDRW uint8 = 0x0C
 
@@ -171,6 +172,14 @@ type Flasher struct {
 	stagingLen uint32
 
 	maxBatch int // transfers that fit in one list
+
+	// csw is the AP's CSW as a batch below needs it -- word-sized, no
+	// auto-increment -- and cswSet is whether it is known to still be there.
+	// The debug registers are on the PPB, which is word-only, so a batch that
+	// inherited a byte-sized CSW from the MEM-AP client would read zeros and
+	// write nothing at all.
+	csw    uint32
+	cswSet bool
 }
 
 func NewFlasher(probe swd.Probe, dpc DebugPort, m Memory, ap uint8,
@@ -210,10 +219,54 @@ func (f *Flasher) apBatch(ctx context.Context, reqs []swd.Request) ([]uint32, er
 	if len(reqs) == 0 {
 		return nil, nil
 	}
-	_, data, err := f.probe.Transfer(ctx, reqs)
+	// These transfers drive DRW directly, so the access size in CSW is theirs
+	// to establish: the MEM-AP client moves it as it likes -- a byte-granular
+	// read leaves it byte-sized -- and the debug registers this batch reaches
+	// are on the PPB, where anything narrower than a word reads as zero and is
+	// written nowhere. One transfer, and only when something may have moved it.
+	if !f.cswSet {
+		csw, err := f.wordCSW(ctx)
+		if err != nil {
+			return nil, err
+		}
+		reqs = append([]swd.Request{{Op: swd.OpWrite, AP: true, Reg: regCSW, Data: csw}}, reqs...)
+	}
+	status, data, err := f.probe.Transfer(ctx, reqs)
 	f.mem.Invalidate()
-	return data, err
+	if err != nil {
+		f.cswSet = false
+		return data, err
+	}
+	if !status.Ok() {
+		f.cswSet = false
+		return data, fmt.Errorf("batch of %d transfers stopped: %v", len(reqs), status)
+	}
+	f.cswSet = true
+	return data, nil
 }
+
+// wordCSW is the CSW this Flasher needs: whatever the AP came up with, with
+// the size forced to a word and auto-increment off. It is read from the AP
+// once rather than assumed, so the AP's own protection bits are kept.
+func (f *Flasher) wordCSW(ctx context.Context) (uint32, error) {
+	if f.csw != 0 {
+		return f.csw, nil
+	}
+	_, v, err := f.probe.Transfer(ctx, []swd.Request{{Op: swd.OpRead, AP: true, Reg: regCSW}})
+	f.mem.Invalidate()
+	if err != nil {
+		return 0, fmt.Errorf("read CSW: %w", err)
+	}
+	if len(v) == 0 {
+		return 0, fmt.Errorf("read CSW: no value")
+	}
+	f.csw = (v[0] &^ (cswSizeMask | cswAddrIncMask)) | cswSizeWord
+	return f.csw, nil
+}
+
+// memMoved records that the MEM-AP client has driven CSW itself, so the next
+// batch has to put back the size it needs.
+func (f *Flasher) memMoved() { f.cswSet = false }
 
 // wr appends "write `value` to target address `addr`" to a batch.
 func wr(reqs []swd.Request, addr, value uint32) []swd.Request {
@@ -307,6 +360,7 @@ func (f *Flasher) Reset(ctx context.Context, haltAfter bool, timeout time.Durati
 	}
 	_ = f.writeDHCSR(ctx, bits)
 
+	f.memMoved()
 	demcr, err := f.mem.ReadTargetReg(ctx, addrDEMCR)
 	if err != nil {
 		return fmt.Errorf("read DEMCR: %w", err)
@@ -357,6 +411,7 @@ func (f *Flasher) Reset(ctx context.Context, haltAfter bool, timeout time.Durati
 // table is pulled over in one block read and walked here rather than chased
 // two bytes at a time, which would be two packets per entry visited.
 func (f *Flasher) LoadJumpTable(ctx context.Context) error {
+	f.memMoved()
 	head, err := f.mem.ReadTargetMem(ctx, bootromMagicAddr, 2)
 	if err != nil {
 		return fmt.Errorf("read bootrom magic: %w", err)
@@ -367,6 +422,7 @@ func (f *Flasher) LoadJumpTable(ctx context.Context) error {
 	table := uint32(uint16(head[1]))
 
 	// The whole table comfortably fits; 512 bytes is 128 entries.
+	f.memMoved()
 	raw, err := f.mem.ReadTargetMemBytes(ctx, table, 512)
 	if err != nil {
 		return fmt.Errorf("read bootrom function table: %w", err)
@@ -564,6 +620,7 @@ func (f *Flasher) Program(ctx context.Context, offset uint32, data []byte, repor
 		if n > len(data)-done {
 			n = len(data) - done
 		}
+		f.memMoved()
 		if err := f.mem.WriteTargetMemBytes(ctx, f.staging, data[done:done+n]); err != nil {
 			return fmt.Errorf("fill bounce buffer for 0x%x: %w", offset+uint32(done), err)
 		}
@@ -595,6 +652,7 @@ func (f *Flasher) ReadFlash(ctx context.Context, offset uint32, length int) ([]b
 		if n > length-done {
 			n = length - done
 		}
+		f.memMoved()
 		got, err := f.mem.ReadTargetMemBytes(ctx, FlashBase+offset+uint32(done), n)
 		if err != nil {
 			return nil, fmt.Errorf("read back 0x%x+%d: %w", offset+uint32(done), n, err)
@@ -613,6 +671,7 @@ func (f *Flasher) Verify(ctx context.Context, offset uint32, data []byte, report
 		if n > len(data)-done {
 			n = len(data) - done
 		}
+		f.memMoved()
 		got, err := f.mem.ReadTargetMemBytes(ctx, FlashBase+offset+uint32(done), n)
 		if err != nil {
 			return fmt.Errorf("read back 0x%x+%d: %w", offset+uint32(done), n, err)

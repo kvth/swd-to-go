@@ -99,4 +99,10 @@ const (
 	// dhcsrDbgKey has to be in the top half of every DHCSR write or the write
 	// is ignored.
 	dhcsrDbgKey uint32 = 0xA05F << 16
+
+	// CSW's access-size and auto-increment fields, which a batched transfer
+	// list driving DRW itself has to set rather than inherit.
+	cswSizeMask    uint32 = 0x7
+	cswSizeWord    uint32 = 0x2
+	cswAddrIncMask uint32 = 0x30
 )

@@ -472,6 +472,15 @@ func (t *Target) drw(isRead bool, data *uint32) uint8 {
 	wordAddr := t.tar &^ 3
 	lane := 8 * (t.tar & 3)
 
+	// The PPB is word-only on ARMv6-M: a byte or halfword access there reads
+	// as zero and writes nothing at all.
+	if width != 4 && wordAddr >= 0xE0000000 {
+		if isRead {
+			t.post(0, data)
+		}
+		return ackOK
+	}
+
 	if isRead {
 		word, ok := t.readWord(wordAddr)
 		if !ok {
