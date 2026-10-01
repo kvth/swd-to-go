@@ -1,5 +1,7 @@
 # swd-to-go
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/kvth/swd-to-go.svg)](https://pkg.go.dev/github.com/kvth/swd-to-go)
+
 A Go SWD stack for ARM debug ports: bitbanged SWD over GPIO, a CMSIS-DAP client
 and server, and DP, MEM-AP, RTT and RP2040 layers on top.
 
