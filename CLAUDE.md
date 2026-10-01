@@ -109,7 +109,7 @@ Loose notes, not commitments — revisit and prune as the project moves:
 
   This is what keeps the higher layers off the implementation, and it is not
   theoretical: `target/mem` does not import `target/dp`, and `target/rtt`
-  imports neither. Only `rp2040.Attach` -- the wiring point, which constructs
+  imports neither. Only `rp2040.Open` -- the wiring point, which constructs
   both -- imports them at all. Do not replace one of these parameters with a
   concrete type to save an indirect call: at this altitude every call is a
   round trip on the wire, and the dispatch is free by comparison. (The

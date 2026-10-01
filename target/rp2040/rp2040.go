@@ -19,6 +19,9 @@
 //   - [Flasher] halts the core, finds the bootrom's function table and runs
 //     the flash routines. [Flasher.FlashImage] is the whole write in one call,
 //     with the preverify, verify and reset steps OpenOCD's `program` has.
+//   - [Open] does all of the above for a one-off command and returns a
+//     [Session], whose methods are the OpenOCD commands a tool used to shell
+//     out for: `program`, `dump_image`, `reset run` and `reset halt`.
 //
 // The debug port and the MEM-AP are the caller's to build, in between:
 //

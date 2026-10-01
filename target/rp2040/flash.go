@@ -230,6 +230,13 @@ func (f *Flasher) FlashImage(ctx context.Context, image []byte, opts Options) (R
 	needsRead := opts.PreVerify || opts.Erase == EraseAuto
 
 	if needsRead {
+		// The plan trusts what the read says is in flash -- a sector that
+		// reads as the image is skipped, one that reads blank is not erased --
+		// so the window has to actually show flash. On a chip that has not
+		// booted from it, a rescued one say, it does not until it is mapped.
+		if err := f.ensureXIP(ctx, timeout); err != nil {
+			return res, err
+		}
 		current, err := f.readForPlan(ctx, opts.Offset, len(padded), opts.Progress)
 		if err != nil {
 			return res, fmt.Errorf("preverify: %w", err)

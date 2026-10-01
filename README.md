@@ -438,7 +438,7 @@ for that case rather than a stub that lies:
 | `target/dp` | debug port: power-up, `SELECT`, AP register access |
 | `target/mem` | MEM-AP: target memory, word and byte granularity — an unaligned range is served by the words containing it, one transfer rather than one TAR write and one DRW access per byte. Shadows `CSW` and `TAR` so a register write that would change nothing never goes out — polling one address costs one round trip rather than two, and a block run reloads `TAR` only where the AP's auto-increment wraps |
 | `target/rtt` | SEGGER RTT against a target's control block. The block is read once at attach and its fixed parts kept, so a poll is one descriptor read; the scan that finds it overlaps its chunks, steps over unmapped memory, and checks a candidate's header before believing the ID string |
-| `target/rp2040` | RP2040 bring-up (`Attach` does the dormant/SWD dance, the multidrop `TARGETSEL` and the DPIDR read that completes it, and returns a detach func — it sets no clock and initialises nothing above the wire), `Rescue` for a board whose firmware has locked the debug port out, and bootrom flashing — `Flasher` batches a ROM call's register setup into one transfer list and moves bulk data with block transfers, and `Flasher.FlashImage` is the whole write with the preverify, verify and reset steps OpenOCD's `program` has |
+| `target/rp2040` | RP2040 bring-up (`Attach` does the dormant/SWD dance, the multidrop `TARGETSEL` and the DPIDR read that completes it, and returns a detach func — it sets no clock and initialises nothing above the wire), `Rescue` for a board whose firmware has locked the debug port out, and bootrom flashing — `Flasher` batches a ROM call's register setup into one transfer list and moves bulk data with block transfers, and `Flasher.FlashImage` is the whole write with the preverify, verify and reset steps OpenOCD's `program` has. `Open` returns a `Session`, the one-off-command layer over all of it: `Program`, `ReadMemory` and `Reset` are OpenOCD's `program`, `dump_image` and `reset run`/`reset halt` |
 
 **Each of these takes an interface it declares itself, and returns a struct.**
 `dp.New` hands back a `*dp.Client` and `mem.New` a `*mem.Client` — a
@@ -450,7 +450,7 @@ to what that package calls.
 
 The point is that the coupling is to the calls and not to the type, and the
 import graph says so: `target/mem` does not import `target/dp`, and
-`target/rtt` imports neither of them. Only `rp2040.Attach`, which constructs
+`target/rtt` imports neither of them. Only `rp2040.Open`, which constructs
 both, imports either. Substituting something else for a MEM-AP — a simulator,
 a cache, a second AP — is a matter of satisfying four methods, not of
 reimplementing `mem.Client`.

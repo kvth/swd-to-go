@@ -25,6 +25,9 @@ const (
 
 	debugBase uint32 = 0xE000E000
 	debugSize uint32 = 0x1000
+
+	ssiBase uint32 = 0x18000000
+	ssiSize uint32 = 0x100
 )
 
 // Bootrom entry points. The addresses are arbitrary; what matters is that the
@@ -55,6 +58,10 @@ const (
 	regDCRSR uint32 = 0xE000EDF4
 	regDCRDR uint32 = 0xE000EDF8
 	regDEMCR uint32 = 0xE000EDFC
+
+	// The XIP SSI registers that say whether the XIP window reads flash.
+	regSSICTRLR0 uint32 = 0x18000000
+	regSSIENR    uint32 = 0x18000008
 )
 
 const (
@@ -74,6 +81,8 @@ const (
 
 	aircrVectKey     uint32 = 0x05FA << 16
 	aircrSysResetReq uint32 = 1 << 2
+
+	ssiTMODEEPROMRead uint32 = 0x3 << 8
 )
 
 // RP2040 is the simulated chip: the debug registers as an MMIO device, plus the
@@ -151,6 +160,7 @@ func NewRP2040(opts Options, flashSize int) (*Target, *RP2040) {
 	}
 	chip.layOutBootROM(bootrom.Data)
 	target.AddMMIO(debugBase, debugSize, chip)
+	target.AddMMIO(ssiBase, ssiSize, chip)
 
 	return target, chip
 }
@@ -195,6 +205,16 @@ func (c *RP2040) Halted() bool {
 	return c.halted
 }
 
+// UnmapXIP takes flash out of the memory map, the state a chip is in when it
+// has not booted from flash -- after a rescue, say, which stops it in the
+// bootrom before boot2 runs.
+func (c *RP2040) UnmapXIP() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.XIPMapped = false
+	c.xip.Unmapped = true
+}
+
 // SetLockup makes the next ROM call halt away from the trampoline's own
 // breakpoint, the way a fault or a stray breakpoint in the application would.
 func (c *RP2040) SetLockup(v bool) {
@@ -236,6 +256,20 @@ func (c *RP2040) ReadWord(addr uint32) (uint32, bool) {
 
 	case regAIRCR:
 		return aircrVectKey, true
+
+	// Mapped is the SSI enabled in EEPROM-read mode; unmapped is either of
+	// the two states that are not, collapsed into one: disabled.
+	case regSSIENR:
+		if c.XIPMapped {
+			return 1, true
+		}
+		return 0, true
+
+	case regSSICTRLR0:
+		if c.XIPMapped {
+			return ssiTMODEEPROMRead, true
+		}
+		return 0, true
 	}
 
 	// Everything else in the debug block reads zero rather than faulting: the

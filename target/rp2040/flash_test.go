@@ -141,6 +141,28 @@ func TestPreVerifySkipsAnAlreadyCurrentTarget(t *testing.T) {
 	}
 }
 
+// A chip that has not booted from flash -- a rescued one, stopped in the
+// bootrom before boot2 -- does not have it in the memory map. The plan is made
+// from reading flash through that window, so it has to be mapped first or the
+// read describes nothing.
+func TestFlashImageMapsAnUnmappedXIPWindowFirst(t *testing.T) {
+	f, chip, _ := newChip(t, simtarget.Options{})
+	chip.UnmapXIP()
+	image := testImage(6 * 1024)
+
+	res, err := f.FlashImage(context.Background(), image,
+		rp2040.Options{PreVerify: true, Verify: true})
+	if err != nil {
+		t.Fatalf("FlashImage on a chip with flash unmapped: %v", err)
+	}
+	if !bytes.Equal(chip.Flash[:len(image)], image) {
+		t.Error("what is in flash is not the image")
+	}
+	if !chip.XIPMapped || !res.Verified {
+		t.Errorf("mapped %v, verified %v; want both", chip.XIPMapped, res.Verified)
+	}
+}
+
 func TestEraseAutoOnlyTouchesTheSectorsThatChanged(t *testing.T) {
 	f, chip, _ := newChip(t, simtarget.Options{})
 	image := testImage(16 * 1024) // four sectors

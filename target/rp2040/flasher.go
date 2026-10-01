@@ -75,6 +75,15 @@ const (
 
 	dcrsrWrite uint32 = 1 << 16
 
+	// The XIP SSI's control and enable registers, which say whether the XIP
+	// window currently reads flash. See ensureXIP.
+	addrSSICTRLR0 uint32 = 0x18000000
+	addrSSIENR    uint32 = 0x18000008
+
+	ssiEnabled        uint32 = 1 << 0
+	ssiTMODMask       uint32 = 0x3 << 8
+	ssiTMODEEPROMRead uint32 = 0x3 << 8
+
 	demcrVCCoreReset uint32 = 1 << 0
 	aircrVectKey     uint32 = 0x05FA << 16
 	aircrSysResetReq uint32 = 1 << 2
@@ -556,6 +565,48 @@ func (f *Flasher) Finish(ctx context.Context) error {
 	return xipErr
 }
 
+// xipMapped reports whether reads through the XIP window reach flash, which is
+// the SSI enabled in EEPROM-read mode: what boot2's fast XIP and the bootrom's
+// flash_enter_cmd_xip both leave it in. flash_exit_xip leaves it in TX-and-RX
+// mode, and a chip reset leaves it disabled.
+func (f *Flasher) xipMapped(ctx context.Context) (bool, error) {
+	v, err := f.apBatch(ctx, rd(rd(nil, addrSSIENR), addrSSICTRLR0))
+	if err != nil {
+		return false, fmt.Errorf("read the XIP SSI state: %w", err)
+	}
+	return v[0]&ssiEnabled != 0 && v[1]&ssiTMODMask == ssiTMODEEPROMRead, nil
+}
+
+// ensureXIP maps flash into the XIP window if it is not mapped already, so
+// that reading it back means something.
+//
+// It is mapped on any chip that booted from flash. It is not on a chip that
+// never got that far, which is exactly the one [Rescue] leaves behind: stopped
+// in the bootrom before boot2 ran, with the SSI still disabled from the reset.
+// Nor is it after a session that died between [Flasher.Prep] and
+// [Flasher.Finish]. Reads through the window there do not describe the flash.
+//
+// When flash is mapped this is one batch of two register reads and leaves a
+// running core running. When it is not, it halts the core ([Flasher.Attach])
+// and runs Prep and Finish -- four ROM calls on the ROM stack at the top of
+// SRAM -- and leaves the core halted.
+func (f *Flasher) ensureXIP(ctx context.Context, timeout time.Duration) error {
+	mapped, err := f.xipMapped(ctx)
+	if err != nil || mapped {
+		return err
+	}
+	if err := f.Attach(ctx, timeout); err != nil {
+		return err
+	}
+	if err := f.Prep(ctx); err != nil {
+		return fmt.Errorf("prepare flash: %w", err)
+	}
+	if err := f.Finish(ctx); err != nil {
+		return fmt.Errorf("map flash: %w", err)
+	}
+	return nil
+}
+
 // Erase clears the whole sectors an image at `offset` will occupy. Note the
 // rounding: a partial sector at either end is erased in full, taking whatever
 // else was in it.
@@ -644,7 +695,8 @@ const readChunk = 16 * 1024
 
 // ReadFlash reads back through the XIP window, which only answers once flash
 // is memory mapped -- so before [Flasher.Prep] or after [Flasher.Finish], not
-// between them.
+// between them. On a chip that has not booted from flash, a rescued one, it is
+// not mapped at all; [Session.ReadMemory] maps it first.
 func (f *Flasher) ReadFlash(ctx context.Context, offset uint32, length int) ([]byte, error) {
 	out := make([]byte, length)
 	for done := 0; done < length; {
