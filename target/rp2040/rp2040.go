@@ -77,19 +77,27 @@ const (
 	TARGET_RESCUE uint32 = 0xf1002927
 )
 
-// dpidr is what an RP2040's debug port answers, and what [Attach] and [Rescue]
-// require before they will believe there is one on the wire.
+// dpidr is what an RP2040's core debug ports answer, and what [Attach]
+// requires before it will believe there is one on the wire.
 //
-// All three ports above report it. DPIDR describes the debug port, not the
-// chip -- designer ARM, ARM's part number 0xbc for the SW-DP design, DPv2,
-// minimal -- and the three instances are the same debug port three times over.
-// What tells them apart is TARGETID, which is the value TARGETSEL is written
-// with, so it has already been asserted by the time DPIDR is read at all.
+// Both cores' ports report it. DPIDR describes the debug port, not the chip --
+// designer ARM, ARM's part number 0xbc for the SW-DP design, DPv2, minimal --
+// and the two instances are the same debug port twice over. What tells them
+// apart is TARGETID, which is the value TARGETSEL is written with, so it has
+// already been asserted by the time DPIDR is read at all.
 //
 // The low 28 bits are fixed by that design. The top nibble is a revision, and
 // a stepping that moved it would be rejected here: the error prints the value
 // read, so the fix is to widen this.
 const dpidr uint32 = 0x0bc12477
+
+// rescueDPIDR is what the rescue port answers, and what [Rescue] requires.
+//
+// The rescue port is not ARM's SW-DP but Raspberry Pi's own minimal one, and
+// its DPIDR says so: designer 0x927 (Raspberry Pi), part number 0x02, DPv2,
+// minimal, revision 1. Read off a real RP2040; it is not the core ports'
+// value, and checking it against that one rejects every rescue.
+const rescueDPIDR uint32 = 0x10212927
 
 const (
 	// bootromMagic is 'M', 'u', then a version byte this ignores, and is what

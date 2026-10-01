@@ -60,13 +60,13 @@ func Attach(ctx context.Context, probe swd.Probe, core uint32) (detach func(cont
 	if err := swd.SwitchAndSelect(ctx, probe, core); err != nil {
 		return detach, fmt.Errorf("switch to SWD and select target 0x%08x: %w", core, err)
 	}
-	if err := checkIDR(ctx, probe); err != nil {
+	if err := checkIDR(ctx, probe, dpidr); err != nil {
 		return detach, fmt.Errorf("target 0x%08x: %w", core, err)
 	}
 	return detach, nil
 }
 
-// checkIDR reads DPIDR and requires it be an RP2040's.
+// checkIDR reads DPIDR and requires it be want, an RP2040's.
 //
 // The value is compared and not just the error, because an empty position can
 // answer without failing at all: an undriven SWD line floats to one rail or the
@@ -77,13 +77,13 @@ func Attach(ctx context.Context, probe swd.Probe, core uint32) (detach func(cont
 // a position with nothing in it from a probe that has died can look for a
 // [swd.TransferError] in the chain: that is the wire answering, where a dead
 // socket or a cancelled context is not.
-func checkIDR(ctx context.Context, probe swd.Probe) error {
+func checkIDR(ctx context.Context, probe swd.Probe, want uint32) error {
 	idr, err := dpRead(ctx, probe, dpIDR)
 	if err != nil {
 		return fmt.Errorf("read DPIDR: %w", err)
 	}
-	if idr != dpidr {
-		return fmt.Errorf("DPIDR is 0x%08x, and an RP2040 reports 0x%08x", idr, dpidr)
+	if idr != want {
+		return fmt.Errorf("DPIDR is 0x%08x, and an RP2040 reports 0x%08x", idr, want)
 	}
 	return nil
 }

@@ -136,6 +136,12 @@ const (
 	coreMSP  = 17
 )
 
+// The rescue port's TARGETSEL and the DPIDR it answers with, as a real RP2040's.
+const (
+	rescueTargetSel uint32 = 0xf1002927
+	rescueDPIDR     uint32 = 0x10212927
+)
+
 // NewRP2040 builds a target that looks enough like an RP2040 for the flashing
 // vendor commands: bootrom, SRAM, XIP flash and the debug registers.
 func NewRP2040(opts Options, flashSize int) (*Target, *RP2040) {
@@ -148,6 +154,14 @@ func NewRP2040(opts Options, flashSize int) (*Target, *RP2040) {
 	}
 	xip := &Region{Base: FlashXIPBase, Data: flash}
 
+	// The rescue port is Raspberry Pi's own DP and reports its own DPIDR.
+	if _, ok := opts.DPIDRs[rescueTargetSel]; !ok {
+		dpidrs := map[uint32]uint32{rescueTargetSel: rescueDPIDR}
+		for k, v := range opts.DPIDRs {
+			dpidrs[k] = v
+		}
+		opts.DPIDRs = dpidrs
+	}
 	target := New(opts, bootrom, sram, xip)
 
 	chip := &RP2040{

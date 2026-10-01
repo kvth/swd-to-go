@@ -118,6 +118,9 @@ type mmioRange struct {
 type Options struct {
 	// DPIDR is what a DPIDR read answers.
 	DPIDR uint32
+	// DPIDRs overrides DPIDR for the DP the last TARGETSEL write named, for a
+	// chip whose ports do not all report the same one (an RP2040's rescue port).
+	DPIDRs map[uint32]uint32
 
 	// Multidrop models an SWD multi-drop wire, as an RP2040 has: after a line
 	// reset no DP answers until a TARGETSEL write picks one, and the DP that
@@ -158,6 +161,7 @@ type Target struct {
 	connected   bool   // PortOn has run
 	selected    bool   // a DP is listening (always true off a multi-drop wire)
 	sawDPIDR    bool   // ADIv5.2: the selected DP answers nothing until DPIDR is read
+	targetSel   uint32 // what the last TARGETSEL write named, picks from DPIDRs
 
 	// MEM-AP state, one AP.
 	csw uint32
@@ -328,6 +332,9 @@ func (t *Target) dpTransfer(addr uint32, isRead bool, data *uint32) uint8 {
 		t.sawDPIDR = true
 		if data != nil {
 			*data = t.opts.DPIDR
+			if v, ok := t.opts.DPIDRs[t.targetSel]; ok {
+				*data = v
+			}
 		}
 		return ackOK
 
@@ -575,6 +582,12 @@ func (t *Target) SwjSequence(bitCount uint32, data []byte) {
 func (t *Target) sequence(bitCount uint32, data []byte) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	// Recorded off a multi-drop wire too, where one DP stands in for all of
+	// them: which DPIDR it answers with still follows the port asked for.
+	if bitCount == 33 && len(data) >= 4 {
+		t.targetSel = binary.LittleEndian.Uint32(data[:4])
+	}
 
 	if !t.opts.Multidrop {
 		return

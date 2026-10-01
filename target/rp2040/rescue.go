@@ -67,10 +67,10 @@ func Rescue(ctx context.Context, probe swd.Probe) error {
 
 	// DPIDR is the only register readable before the sticky bits are cleared,
 	// and on a multidrop wire ADIv5.2 requires it be read first anyway. The
-	// rescue port is one of the three debug ports on the chip and reports the
-	// same DPIDR as the other two, so it gets the same check: an undriven
-	// wire, or something that is not an RP2040, is not a chip to rescue.
-	if err := checkIDR(ctx, probe); err != nil {
+	// rescue port reports its own DPIDR, not the cores' (see rescueDPIDR), but
+	// gets the same check: an undriven wire, or something that is not an
+	// RP2040, is not a chip to rescue.
+	if err := checkIDR(ctx, probe, rescueDPIDR); err != nil {
 		return fmt.Errorf("rescue port: %w", err)
 	}
 

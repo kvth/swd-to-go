@@ -359,6 +359,21 @@ func TestRescueRunsTheResetSequence(t *testing.T) {
 	}
 }
 
+// The rescue port reports Raspberry Pi's DPIDR, not the cores' ARM one. A
+// rescue port answering with the cores' value is not what a real RP2040 does.
+func TestRescueChecksTheRescueDPIDR(t *testing.T) {
+	target, _ := simtarget.NewRP2040(simtarget.Options{
+		Multidrop: true,
+		TargetSel: rp2040.TARGET_RESCUE,
+		DPIDRs:    map[uint32]uint32{rp2040.TARGET_RESCUE: 0x0BC12477},
+	}, flashSize)
+
+	err := rp2040.Rescue(context.Background(), bitbang.New(target))
+	if err == nil || !strings.Contains(err.Error(), "an RP2040 reports 0x10212927") {
+		t.Fatalf("Rescue gave %v, want the rescue DPIDR mismatch", err)
+	}
+}
+
 // The rescue port is instance 0xF, not either core's. A wire where only core 0
 // answers has to leave a rescue with nothing to talk to -- which is what says
 // the TARGETSEL being written is the rescue port's and not the core's.
