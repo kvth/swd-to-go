@@ -1,7 +1,7 @@
 // Package swd is the interface layer every other package in this module is
 // written against.
 //
-// There are three altitudes here, and keeping them apart is the whole point:
+// The module has three layers:
 //
 //   - [BitBanger] is a pin-level SWD driver. It knows about bits, turnarounds
 //     and a single ACK. The packages under drivers/ implement it.

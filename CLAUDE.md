@@ -1,7 +1,7 @@
 # swd-to-go
 
 A Go SWD stack for ARM debug ports. See [README.md](README.md) for the
-architecture (the "three altitudes" diagram) and package layout — that is the
+architecture (the layer diagram) and package layout — that is the
 authoritative description of how the code is shaped and should stay in sync
 with it.
 
@@ -72,7 +72,7 @@ Concretely:
 
 Performance matters everywhere, but it is paramount in the low-level
 bit-banging routines (the actual SWD clocking/transport code). At that
-altitude:
+layer:
 
 - Avoid interfaces and dynamic dispatch — they add indirection and prevent
   inlining on the hot path. Use concrete types and direct calls instead.
@@ -111,7 +111,7 @@ Loose notes, not commitments — revisit and prune as the project moves:
   theoretical: `target/mem` does not import `target/dp`, and `target/rtt`
   imports neither. Only `rp2040.Open` -- the wiring point, which constructs
   both -- imports them at all. Do not replace one of these parameters with a
-  concrete type to save an indirect call: at this altitude every call is a
+  concrete type to save an indirect call: at this layer every call is a
   round trip on the wire, and the dispatch is free by comparison. (The
   bit-banging layer is where that trade-off runs the other way -- see
   Performance above.)

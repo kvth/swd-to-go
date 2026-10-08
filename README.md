@@ -13,7 +13,7 @@ wrapped to make them fit.
 The CMSIS-DAP wire protocol here is the one OpenOCD's `cmsis-dap backend tcp`
 speaks, so OpenOCD can point straight at `swd-gateway`.
 
-## The three altitudes
+## Layers
 
 ```
 target/  dp · mem · rp2040 · rtt          written against swd.Probe
